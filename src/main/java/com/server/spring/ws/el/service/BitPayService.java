@@ -1,8 +1,11 @@
-package com.server.spring.ws.el;
+package com.server.spring.ws.el.service;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.server.spring.ws.el.dto.BitPay;
+import com.server.spring.ws.el.dto.BitPayDto;
+import com.server.spring.ws.el.model.BitPay;
+import com.server.spring.ws.el.repository.BitPayRepository;
+import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -22,6 +25,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 
 import static java.lang.String.format;
@@ -29,10 +33,12 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.Files.write;
 
 @Service
+@Slf4j
 public class BitPayService {
 
     private final RestTemplate restTemplate;
     private final WebClient webClient;
+    private final BitPayRepository bitPayRepository;
 
     @Value("${spring.url}")
     private String baseURL;
@@ -40,18 +46,30 @@ public class BitPayService {
     @Value("${spring.path}")
     private String path;
 
-    public BitPayService(RestTemplate restTemplate, WebClient webClient) {
+    public BitPayService(RestTemplate restTemplate, WebClient webClient, BitPayRepository bitPayRepository) {
         this.restTemplate = restTemplate;
         this.webClient = webClient;
+        this.bitPayRepository = bitPayRepository;
+    }
+
+    /*List<CountryDTO> res = countries.stream().map(c -> new CountryDTO(c.getName(),
+            c.getStates().stream().mapToInt(State::getPopulation).sum(),
+            c.getStates().stream().flatMap(s -> s.getTowns().stream()).toList())).toList();*/
+
+    public List<BitPayDto> getAllBitPay() {
+        return bitPayRepository.findAll()
+                .stream()
+                .map(x -> new BitPayDto(x.getCode(), x.getName(), x.getRate()))
+                .toList();
     }
 
     public void getRestTemplate() throws IOException {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<String> requestEntity = new HttpEntity<>(headers);
-        ParameterizedTypeReference<List<BitPay>> responseType = new ParameterizedTypeReference<List<BitPay>>() {};
-        ResponseEntity<List<BitPay>> response = restTemplate.exchange(baseURL, HttpMethod.GET, requestEntity, responseType);
-        List<BitPay> bitPays = response.getBody();
+        ParameterizedTypeReference<List<BitPayDto>> responseType = new ParameterizedTypeReference<List<BitPayDto>>() {};
+        ResponseEntity<List<BitPayDto>> response = restTemplate.exchange(baseURL, HttpMethod.GET, requestEntity, responseType);
+        List<BitPayDto> bitPays = response.getBody();
         System.out.println("Reponse 1: " + bitPays);
         if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
             persistFileBitPayToJson(bitPays);
@@ -71,7 +89,7 @@ public class BitPayService {
             }
             String responseBody = response.body().string();
             ObjectMapper mapper = new ObjectMapper();
-            List<BitPay> bitPays = mapper.readValue(responseBody, mapper.getTypeFactory().constructCollectionType(List.class, BitPay.class));
+            List<BitPayDto> bitPays = mapper.readValue(responseBody, mapper.getTypeFactory().constructCollectionType(List.class, BitPayDto.class));
             persistFileBitPayToJson(bitPays);
             System.out.println("Reponse 2 : " + responseBody);
         }
@@ -85,7 +103,7 @@ public class BitPayService {
         String reponseBody = (entity != null) ? EntityUtils.toString(entity) : null;
         System.out.println("Reponse 3 : " + reponseBody);
         ObjectMapper mapper = new ObjectMapper();
-        List<BitPay> bitPays = mapper.readValue(reponseBody,mapper.getTypeFactory().constructCollectionType(List.class, BitPay.class));
+        List<BitPayDto> bitPays = mapper.readValue(reponseBody,mapper.getTypeFactory().constructCollectionType(List.class, BitPayDto.class));
         persistFileBitPayToJson(bitPays);
 
         response.close();
@@ -93,16 +111,32 @@ public class BitPayService {
     }
 
     public void getWebClient() throws IOException {
-        List<BitPay> reponseBody = webClient.get()
+        List<BitPayDto> reponseBody = webClient.get()
                 .uri(baseURL)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<List<BitPay>>() {})
+                .bodyToMono(new ParameterizedTypeReference<List<BitPayDto>>() {})
                 .block();
         System.out.println("Reponse 4 : " + reponseBody);
     }
 
-    private void persistFileBitPayToJson(List<BitPay> bitPays) throws IOException {
+    public void fetchAndSaveBitPay() {
+        BitPay[] bitPays = restTemplate.getForObject(baseURL, BitPay[].class);
+        if (bitPays != null) {
+            List<BitPay> uniqueTodos = Arrays.stream(bitPays)
+                    .filter(bitPay -> !bitPayRepository.existsByCode(bitPay.getCode()))
+                    .toList();
+            if (!uniqueTodos.isEmpty()) {
+                bitPayRepository.saveAll(uniqueTodos);
+                log.info( "Nouveaux inséré.",uniqueTodos.size());
+            } else {
+                log.info("Aucun nouveau");
+            }
+        }
+    }
+
+
+    private void persistFileBitPayToJson(List<BitPayDto> bitPays) throws IOException {
         File file = new File( path);
         if (file.exists()) {
             file.delete();

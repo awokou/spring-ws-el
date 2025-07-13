@@ -1,5 +1,6 @@
 package com.server.spring.ws.el;
 
+import com.server.spring.ws.el.service.BitPayService;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -20,6 +21,6 @@ public class SpringWsElApplication {
 
 	@Bean
 	public CommandLineRunner run() {
-		return args -> bitPayService.getRestTemplate();
+		return args -> bitPayService.fetchAndSaveBitPay();
 	}
 }
