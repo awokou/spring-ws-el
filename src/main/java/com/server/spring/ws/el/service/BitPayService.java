@@ -20,7 +20,6 @@ import org.springframework.http.*;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.File;
 import java.io.IOException;
@@ -37,7 +36,6 @@ import static java.nio.file.Files.write;
 public class BitPayService {
 
     private final RestTemplate restTemplate;
-    private final WebClient webClient;
     private final BitPayRepository bitPayRepository;
 
     @Value("${spring.url}")
@@ -46,18 +44,20 @@ public class BitPayService {
     @Value("${spring.path}")
     private String path;
 
-    public BitPayService(RestTemplate restTemplate, WebClient webClient, BitPayRepository bitPayRepository) {
+    public BitPayService(RestTemplate restTemplate, BitPayRepository bitPayRepository) {
         this.restTemplate = restTemplate;
-        this.webClient = webClient;
         this.bitPayRepository = bitPayRepository;
     }
 
-    /*List<CountryDTO> res = countries.stream().map(c -> new CountryDTO(c.getName(),
-            c.getStates().stream().mapToInt(State::getPopulation).sum(),
-            c.getStates().stream().flatMap(s -> s.getTowns().stream()).toList())).toList();*/
-
     public List<BitPayDto> getAllBitPay() {
         return bitPayRepository.findAll()
+                .stream()
+                .map(x -> new BitPayDto(x.getCode(), x.getName(), x.getRate()))
+                .toList();
+    }
+
+    public List<BitPayDto> getAllBitPayByCode(String code) {
+        return bitPayRepository.findByCodeContaining(code)
                 .stream()
                 .map(x -> new BitPayDto(x.getCode(), x.getName(), x.getRate()))
                 .toList();
@@ -70,7 +70,7 @@ public class BitPayService {
         ParameterizedTypeReference<List<BitPayDto>> responseType = new ParameterizedTypeReference<List<BitPayDto>>() {};
         ResponseEntity<List<BitPayDto>> response = restTemplate.exchange(baseURL, HttpMethod.GET, requestEntity, responseType);
         List<BitPayDto> bitPays = response.getBody();
-        System.out.println("Reponse 1: " + bitPays);
+        log.info("Reponse 1: " ,bitPays);
         if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
             persistFileBitPayToJson(bitPays);
         } else {
@@ -91,7 +91,7 @@ public class BitPayService {
             ObjectMapper mapper = new ObjectMapper();
             List<BitPayDto> bitPays = mapper.readValue(responseBody, mapper.getTypeFactory().constructCollectionType(List.class, BitPayDto.class));
             persistFileBitPayToJson(bitPays);
-            System.out.println("Reponse 2 : " + responseBody);
+            log.info("Reponse 2 : " ,responseBody);
         }
     }
 
@@ -101,23 +101,13 @@ public class BitPayService {
         CloseableHttpResponse response = httpClient.execute(request);
         org.apache.http.HttpEntity entity = response.getEntity();
         String reponseBody = (entity != null) ? EntityUtils.toString(entity) : null;
-        System.out.println("Reponse 3 : " + reponseBody);
+        log.info("Reponse 3 : " ,reponseBody);
         ObjectMapper mapper = new ObjectMapper();
         List<BitPayDto> bitPays = mapper.readValue(reponseBody,mapper.getTypeFactory().constructCollectionType(List.class, BitPayDto.class));
         persistFileBitPayToJson(bitPays);
 
         response.close();
         httpClient.close();
-    }
-
-    public void getWebClient() throws IOException {
-        List<BitPayDto> reponseBody = webClient.get()
-                .uri(baseURL)
-                .accept(MediaType.APPLICATION_JSON)
-                .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<List<BitPayDto>>() {})
-                .block();
-        System.out.println("Reponse 4 : " + reponseBody);
     }
 
     public void fetchAndSaveBitPay() {
@@ -144,6 +134,6 @@ public class BitPayService {
         ObjectMapper mapper = new ObjectMapper();
         mapper.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true);
         mapper.writerWithDefaultPrettyPrinter().writeValue(file, bitPays);
-        System.out.println("Données sauvegardées dans le fichier : " + file.getAbsolutePath());
+        log.info("Données sauvegardées dans le fichier : ", file.getAbsolutePath());
     }
 }
